@@ -31,10 +31,6 @@ class Encoder
         encoder_b.fall(callback(this, &Encoder::fall_b));
     };
 
-
-    
-
-
     void rise_a()
     {
         if(encoder_b.read()){
