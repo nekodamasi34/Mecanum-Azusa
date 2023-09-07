@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/acan2517fd" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/mdc_client" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/serialbridge" vcs="Git" />
+  </component>
+</project>

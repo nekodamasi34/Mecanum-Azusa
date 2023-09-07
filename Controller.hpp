@@ -6,7 +6,7 @@
 typedef struct ControllerType
 {
     double x;  //x軸
-    double y;  //y軸 
+    double y;  //y軸
     bool l;    //左回転モード
     bool r;    //右回転モード
     bool a, b, c; //ボタン
