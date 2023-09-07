@@ -5,3 +5,5 @@ compile_commands.json
 .cache
 mbed-os
 serialbridge
+mdc_client
+acan2517fd

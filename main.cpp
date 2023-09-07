@@ -2,23 +2,54 @@
 #include "math.h"
 #include <chrono>
 
-#include <SerialBridge.hpp>
-#include <MbedHardwareSerial.hpp>
-#include <Controller.hpp>
+#include "AnalogIn.h"
+#include "DigitalOut.h"
+#include "mbed_wait_api.h"
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 
-#include <Encoder.hpp>
-#include <Mecanum.hpp>
-#include <md.hpp>
-#include <pid.hpp>
+#include "ACAN2517FD.h"
+#include "MbedHardwareSPI.h"
+#include "CANSerialBridge.hpp"
+
+#include "MbedHardwareSerial.hpp"
+#include "SerialBridge.hpp"
+#include "Controller.hpp"
+
+#include "mdc_client/MDCClient.hpp"
+
+#include "Mecanum.hpp"
+
+Timer timer;
+double pre_timer = 0.01;
+
+#define ENCODER_REVOLUTION 1296
+
+using namespace acan2517fd;
 
 const double PI = 3.141592653589;
 
-SerialDev *dev = new MbedHardwareSerial(new Serial(D5, D4, 115200));
-SerialBridge serial(dev, 1024);
+uint32_t getMillisecond() {
+    return (uint32_t) duration_cast<std::chrono::milliseconds>(timer.elapsed_time()).count();
+}
 
+SPI spi(PC_1, PB_14, PC_7);
+MbedHardwareSPI hardware_dev0(spi, PB_9);
+ACAN2517FD dev0_can(hardware_dev0, getMillisecond);
+CANSerialBridge serial(&dev0_can);
+
+MDCClient mdc_client(&serial, 0);
+
+DigitalOut acknowledge_0(PC_8);
+
+SerialDev *dev = new MbedHardwareSerial(new BufferedSerial(PC_10, PC_11, 115200));
+SerialBridge serial_control(dev, 1024);
 Controller msc;
 
 MecanumWheel mw;
+
+
 
 /*
     [0] --→ 左前　 (FrontLeft)  [FL]
@@ -27,69 +58,198 @@ MecanumWheel mw;
     [3] --→ 右後ろ (RearRight)  [RR]
 */
 
-// PIDゲイン調整 {kp(比例), ki(積分), kd(微分)}
-PID pid_0(1.0, 0.1, 0.05);
-PID pid_1(1.0, 0.1, 0.05);
-PID pid_2(1.0, 0.1, 0.05);
-PID pid_3(1.0, 0.1, 0.05);
+static uint32_t gUpdateDate = 0;
+static uint32_t gSentDate = 0;
 
-// PID用周期調整 (ここを変えるならmainの最後の行も変える)
-double DELTA_T = 0.01;
-
-// エンコーダーの制御ピン (a, b)
-Encoder encoder_0(A0, D0);
-Encoder encoder_1(A1, D1);
-Encoder encoder_2(A2, D2);
-Encoder encoder_3(A3, D3);
-
-// MDの制御ピン (pwmピン, dirピン, 逆転モード)
-MD md_0(PA_0, PA_4, 0);
-MD md_1(PA_1, PA_5, 0);
-MD md_2(PA_2, PA_6, 0);
-MD md_3(PA_3, PA_7, 0);
 
 int main() {
 
-    serial.add_frame(0, &msc);
+    serial_control.add_frame(0, &msc);
+
+    timer.start();
+
+    //  set up
+    ACAN2517FDSettings settings (ACAN2517FDSettings::OSC_4MHz, 125UL * 1000UL, DataBitRateFactor::x8);
+
+    settings.mRequestedMode = ACAN2517FDSettings::NormalFD;
+    
+    settings.mDriverTransmitFIFOSize = 5;
+    settings.mDriverReceiveFIFOSize = 5;
+
+    settings.mBitRatePrescaler = 1;
+    //  Arbitation Bit Rate
+    settings.mArbitrationPhaseSegment1 = 255;
+    settings.mArbitrationPhaseSegment2 = 64;
+    settings.mArbitrationSJW = 64;
+    //  Data Bit Rate
+    settings.mDataPhaseSegment1 = 31;
+    settings.mDataPhaseSegment2 = 8;
+    settings.mDataSJW = 8;
+
+    //--- RAM Usage
+    printf("MCP2517FD RAM Usage: %d [bytes]\n\r", settings.ramUsage());
+
+    printf("initializing device 0...\n\r");
+    const uint32_t errorCode0 = dev0_can.begin (settings) ;
+    if (errorCode0 == 0) {
+        printf("initialized device 0!\n\r");
+    }else{
+        printf("Configuration error 0x%x\n\r", errorCode0);
+    }
+
+    printf("all configuration completed!\n\r");
+
+        setting_struct_t mdc_settings_0 = {
+        OperatorMode::MD_OPERATOR,
+        EncoderType::VELOCITY,
+        ENCODER_REVOLUTION,
+        false,
+        0.40,
+        0.8,
+        0,
+        0,
+        0,
+        0,
+        0
+    };
+
+    setting_struct_t mdc_settings_1 = {
+        OperatorMode::MD_OPERATOR,
+        EncoderType::VELOCITY,
+        ENCODER_REVOLUTION,
+        true,
+        0.40,
+        0.9,
+        0,
+        0,
+        0,
+        0,
+        0
+    };
+
+    setting_struct_t mdc_settings_2 = {
+        OperatorMode::MD_OPERATOR,
+        EncoderType::VELOCITY,
+        ENCODER_REVOLUTION,
+        false,
+        0.40,
+        0.8,
+        0,
+        0,
+        0,
+        0,
+        0
+    };
+
+    setting_struct_t mdc_settings_3 = {
+        OperatorMode::MD_OPERATOR,
+        EncoderType::VELOCITY,
+        ENCODER_REVOLUTION,
+        true,
+        0.45,
+        0.8,
+        0,
+        0,
+        0,
+        0,
+        0
+    };
+
+    mdc_client.update_setting(0, mdc_settings_0);
+    mdc_client.update_setting(1, mdc_settings_1);
+    mdc_client.update_setting(2, mdc_settings_2);
+    mdc_client.update_setting(3, mdc_settings_3);
 
     while (1) {
 
-        serial.update();
+        serial_control.update();
 
-        if(msc.was_updated()){
+        dev0_can.poll();
 
-        // Joystickの値を取得(値域を±0.5から±1にする)
-        double joyXValue = (msc.data.x - 0.5) * 2;
-        double joyYValue = (msc.data.y - 0.5) * 2;
 
-        // ボタンの状態を取得(Lならマイナス,Rならプラス)
-        double LRturn = msc.data.r -  msc.data.l;
 
-        // Joystickのベクトル化
-        double targetSpeed    = sqrt(joyXValue * joyXValue + joyYValue * joyYValue);
-        double targetRotation = atan2(msc.data.y, msc.data.x) - (PI /4);
+        // if(msc.was_updated()){
 
-        if(targetRotation < 0){
-            targetRotation += (2 * PI);
-        }
+            
 
-        // 目標速度, 回転速度, 回転方向を設定
-        mw.control(targetSpeed, targetRotation, LRturn);
 
-        // PID制御
-        pid_0.control(encoder_0.get_rps(), mw.getSpeed_0(), DELTA_T);
-        pid_1.control(encoder_1.get_rps(), mw.getSpeed_1(), DELTA_T);
-        pid_2.control(encoder_2.get_rps(), mw.getSpeed_2(), DELTA_T);
-        pid_3.control(encoder_3.get_rps(), mw.getSpeed_3(), DELTA_T);
+            // PID用周期調整
+            double DELTA_T = timer.read() - pre_timer;
 
-        // MD出力
-        md_0.drive(pid_0.get_pid());
-        md_1.drive(pid_1.get_pid());
-        md_2.drive(pid_2.get_pid());
-        md_3.drive(pid_3.get_pid());
+            // Joystickの値を取得(値域を±0.5から±1にする)
+            double joyXValue = (msc.data.x - 0.5) * 2;
+            double joyYValue = (msc.data.y - 0.5) * 2;
 
-        // 周期調整用 (ここを変えるならDELTA_Tも変える)
-        ThisThread::sleep_for(10ms);
-        }     
+            if(joyXValue < 0.1 && joyXValue > -0.1){
+                joyXValue = 0;
+            }
+
+            if(joyYValue < 0.1 && joyYValue > -0.1){
+                joyYValue = 0;
+            }
+
+            // ボタンの状態を取得(Lならマイナス,Rならプラス)
+            double turn = (msc.data.r * 0.3) - (msc.data.l * 0.3);
+
+            if(msc.data.n == 1){
+                turn = msc.data.r - msc.data.l;
+            }
+
+            // Joystickのベクトル化
+            double targetSpeed    = sqrt(joyXValue * joyXValue + joyYValue * joyYValue);
+            double targetRotation = atan2(joyYValue, joyXValue) - (PI /4);
+
+            // targetSpeedが1,-1を超えないようにする
+            if(targetSpeed > 1){
+                targetSpeed = 1;
+            }else if (targetSpeed < -1) {
+                targetSpeed = -1;
+            }
+
+            // targetSpeedが0.1以下の時に起動しないようにする
+
+            if(targetSpeed < 0.1 && targetSpeed > -0.1){
+                targetSpeed = 0;
+            }
+
+            // targetRotationがマイナスにならないように2πたす
+            if(targetRotation < 0){
+                targetRotation += (2 * PI);
+            }
+
+            // 目標速度, 回転速度, 回転方向を設定
+            mw.control(targetSpeed, targetRotation, turn);
+
+            if (getMillisecond() - gUpdateDate > 40) {
+                serial.update();
+                if(mdc_client.update()) {
+                    for(int i = 0; i < 4; i++) { 
+                        printf("u%d:%4.2f ", i, mdc_client.feedback.data.node[i].velocity);
+                    }
+                }
+
+                gUpdateDate = getMillisecond();
+            }
+
+            if(getMillisecond() - gSentDate > 100){
+                mdc_client.set_target(0, mw.getSpeed(0));
+                mdc_client.set_target(1, mw.getSpeed(1));
+                mdc_client.set_target(2, mw.getSpeed(2));
+                mdc_client.set_target(3, mw.getSpeed(3));
+
+                mdc_client.send_target();
+
+                gSentDate = getMillisecond();
+            }
+            pre_timer = (double)timer.read();
+
+            // 周期調整用 (ここを変えるならDELTA_Tも変える)
+            ThisThread::sleep_for(10ms);
+
+
+
+
+
+        
     }
 }
