@@ -4,7 +4,7 @@ compile_commands.json
 .clangd
 .cache
 mbed-os
-serialbridge
-mdc_client
-acan2517fd
+#serialbridge
+#mdc_client
+#acan2517fd
 .idea/

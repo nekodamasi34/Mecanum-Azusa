@@ -1,0 +1,9 @@
+[submodule "SerialBridge"]
+	path = SerialBridge
+	url = https://github.com/TNCT-Mechatech/SerialBridge.git
+[submodule "acan2517FD"]
+	path = acan2517FD
+	url = https://github.com/TNCT-Mechatech/acan2517FD.git
+[submodule "mdc_client"]
+	path = mdc_client
+	url = https://github.com/TNCT-Mechatech/mdc_client.git
